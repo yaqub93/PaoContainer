@@ -17,7 +17,7 @@ COPY workdir .
 #RUN ls
 #RUN ls /app/ai-navigator-python-library 
 WORKDIR /app/ai-navigator-python-library 
-RUN git submodule update
+RUN git pull
 #RUN pip install -r requirements.txt
 RUN pip install .
 WORKDIR /app
