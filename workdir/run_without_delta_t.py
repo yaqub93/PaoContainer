@@ -103,7 +103,7 @@ def X_L2(x_expert, x_estimated):
 def U_L2(u_expert, u_estimated):
     return np.mean(l2_distance(u_expert, u_estimated))
 
-#delta_t = 120
+delta_t = 120
 sampling_time = 10.0
 
 def DDV(u, delta_t, df, i):
@@ -179,23 +179,23 @@ print(i2s)
 
 theta1s = []
 theta2s = []
-delta_t_opts = []
 idx = 0
 for i1,i2 in zip(i1s, i2s):
     df = df_final.iloc[i1:i2]
 
     input_values = list(np.round(np.arange(-2,2.1,0.1),1))
 
+    ddv_fun = {}
+    for i in range(len(df)):
+        ddvs = []
+        ddv_fun[i] = []
+        for u in input_values:
+            ddv = DDV(u, delta_t, df, i)
+            ddv_fun[i].append(ddv)
+            
     len_u = len(df)
 
-    def upper_obj(theta1, theta2, delta_t):
-        ddv_fun = {}
-        for i in range(len(df)):
-            ddv_fun[i] = []
-            for u in input_values:
-                ddv = DDV(u, delta_t, df, i)
-                ddv_fun[i].append(ddv)
-                
+    def upper_obj(theta1, theta2):
         #from pyomo.core.base.piecewise import Piecewise
         M_o_expr = 0
         for i in range(len_u):
@@ -230,24 +230,21 @@ for i1,i2 in zip(i1s, i2s):
 
     theta1 = np.arange(0.05,0.46,0.05)
     theta2 = 1.0-theta1
-    delta_ts = [30,60,120,180]
 
     dict_out = {}
     for t1, t2 in zip(theta1, theta2):
-        for ts in delta_ts:
-            print("============")
-            print(t1,t2,ts)
-            dict_out[(t1, t2, ts)] = upper_obj(t1, t2, ts)
+        print("============")
+        print(t1,t2)
+        dict_out[(t1, t2)] = upper_obj(t1, t2)
 
     min_key = min(dict_out, key=dict_out.get)
     min_value = dict_out[min_key]
 
     print(min_key, min_value)
 
-    theta1, theta2, delta_t_opt = min_key
+    theta1, theta2 = min_key
     theta1s.append(theta1)
     theta2s.append(theta2)
-    delta_t_opts.append(delta_t_opt)
     
     lats, lons = [], []
     lats_c, lons_c = [], []
@@ -258,19 +255,12 @@ for i1,i2 in zip(i1s, i2s):
     cog_A = df["cog"].iloc[0]
     cog_A_c = df["cog"].iloc[0]
     print(lat_A, lon_A)
-    
-    ddv_fun = {}
-    for i in range(len(df)):
-        ddv_fun[i] = []
-        for u in input_values:
-            ddv = DDV(u, delta_t_opt, df, i)
-            ddv_fun[i].append(ddv)
-    
     for i in range(len_u):
         # Solve the lower-level problem
 
         L = ConcreteModel()
         output_values = ddv_fun[i]
+        
 
         L.u_est = Var(bounds=(-2,2))
         L.ddv = Var(bounds=(0,1))
@@ -349,11 +339,4 @@ plt.plot(theta2s,label="theta2")
 plt.grid()
 plt.legend()
 plt.savefig("thetas.png")
-
-plt.clf()
-
-plt.plot(delta_t_opts)
-plt.grid()
-plt.legend()
-plt.savefig("delta_t_opts.png")
 
