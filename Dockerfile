@@ -14,10 +14,10 @@ RUN conda install -c conda-forge shapely
 RUN conda install -c conda-forge matplotlib
 # The code to run when container is started:
 COPY workdir .
-RUN git submodule update
 #RUN ls
 #RUN ls /app/ai-navigator-python-library 
 WORKDIR /app/ai-navigator-python-library 
+RUN git submodule update
 #RUN pip install -r requirements.txt
 RUN pip install .
 WORKDIR /app
