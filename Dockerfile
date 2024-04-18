@@ -4,7 +4,7 @@ MAINTAINER Shinya Suzuki <sshinya@bio.titech.ac.jp>
 LABEL DESCRIPTION "Container for optimization with Pao and some of solvers"
 
 ENV TOOL_DIR /opt
-ENV BONMIN_VERSION 1.8.8
+ENV BONMIN_VERSION 1.8.7
 ENV COUENNE_VERSION 0.5.8
 ENV IPOPT_VERSION 3.12.10
 ENV SCIP_VERSION 6.0.1
