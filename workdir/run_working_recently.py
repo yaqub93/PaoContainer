@@ -51,7 +51,6 @@ from sllib.datatypes import VesselState
 import pandas as pd 
 import math
 import matplotlib.pyplot as plt 
-from concurrent.futures import ThreadPoolExecutor
 
 def rotation_matrix(angle):
     """
@@ -179,42 +178,10 @@ while i < 75:
 print(i1s)
 print(i2s)
 
-
-def upper_obj(theta1, theta2, delta_t, len_u, df):
-    ddv_fun = {}
-    for i in range(len(df)):
-        ddv_fun[i] = []
-        for u in input_values:
-            ddv = DDV(u, delta_t, df, i)
-            ddv_fun[i].append(ddv)
-            
-    M_o_expr = 0
-    for i in range(len_u):
-        L = ConcreteModel()
-        output_values = ddv_fun[i]
-
-        L.u_est = Var(bounds=(-2,2))
-        L.ddv = Var(bounds=(0,1))
-        L.con = Piecewise(L.ddv, L.u_est, pw_pts=input_values, pw_constr_type='EQ', f_rule=output_values, pw_repn='INC')
-
-        L.o = Objective(expr=J3(L.u_est, L.ddv, theta1, theta2),
-                        sense=minimize)
-        
-        SolverFactory('mindtpy').solve(L, mip_solver='glpk', nlp_solver='ipopt') 
-
-        u_est = L.u_est.value
-        print("(", u_est, df["cog_dot"].iloc[i], ")", end=", ")
-        #print(theta1.value, theta2.value, u_est)
-        M_o_expr += (df["cog_dot"].iloc[i]-u_est)**2
-    print()
-    print("F:",M_o_expr)
-    return M_o_expr
-    
 theta1s = []
 theta2s = []
 delta_t_opts = []
 idx = 0
-output_pickle = []
 for i1,i2 in zip(i1s, i2s):
     df = df_final.iloc[i1:i2]
 
@@ -222,30 +189,56 @@ for i1,i2 in zip(i1s, i2s):
 
     len_u = len(df)
 
+    def upper_obj(theta1, theta2, delta_t):
+        ddv_fun = {}
+        for i in range(len(df)):
+            ddv_fun[i] = []
+            for u in input_values:
+                ddv = DDV(u, delta_t, df, i)
+                ddv_fun[i].append(ddv)
+                
+        #from pyomo.core.base.piecewise import Piecewise
+        M_o_expr = 0
+        for i in range(len_u):
+            L = ConcreteModel()
+            output_values = ddv_fun[i]
+
+            L.u_est = Var(bounds=(-2,2))
+            L.ddv = Var(bounds=(0,1))
+            #print(len(input_values), len(output_values))
+            #print(type(input_values), type(output_values))
+            L.con = Piecewise(L.ddv, L.u_est, pw_pts=input_values, pw_constr_type='EQ', f_rule=output_values, pw_repn='INC')
+
+            L.o = Objective(expr=J3(L.u_est, L.ddv, theta1, theta2),
+                            sense=minimize)
+            
+            #opt_N = pao.Solver("pao.pyomo.FA")
+            #results = opt_N.solve(N)
+            
+            SolverFactory('mindtpy').solve(L, mip_solver='glpk', nlp_solver='ipopt') 
+
+            #model.obj.display()
+
+            #print(model.ddv.value)
+            
+            u_est = L.u_est.value
+            print("(", u_est, df["cog_dot"].iloc[i], ")", end=", ")
+            #print(theta1.value, theta2.value, u_est)
+            M_o_expr += (df["cog_dot"].iloc[i]-u_est)**2
+        print()
+        print("F:",M_o_expr)
+        return M_o_expr
+
     theta1 = np.arange(0.05,0.46,0.05)
     theta2 = 1.0-theta1
     delta_ts = [30,60,120,180]
 
-    def calculate_upper_level(t1, t2, ts):
-        print("============")
-        print(t1, t2, ts)
-        return (t1, t2, ts), upper_obj(t1, t2, ts, len_u, df)
-
     dict_out = {}
-    with ThreadPoolExecutor() as executor:
-        tasks = [(t1, t2, ts) for t1, t2 in zip(theta1, theta2) for ts in delta_ts]
-        results = executor.map(lambda args: calculate_upper_level(*args), tasks)
-    print("results")
-    print(results)
-    for key, value in results:
-        dict_out[key] = value
-    """
     for t1, t2 in zip(theta1, theta2):
         for ts in delta_ts:
-            #print("============")
-            #print(t1,t2,ts)
-            dict_out[(t1, t2, ts)] = upper_obj(t1, t2, ts, len_u, df)
-    """
+            print("============")
+            print(t1,t2,ts)
+            dict_out[(t1, t2, ts)] = upper_obj(t1, t2, ts)
 
     min_key = min(dict_out, key=dict_out.get)
     min_value = dict_out[min_key]
@@ -275,18 +268,29 @@ for i1,i2 in zip(i1s, i2s):
             ddv_fun[i].append(ddv)
     
     for i in range(len_u):
+        # Solve the lower-level problem
+
         L = ConcreteModel()
         output_values = ddv_fun[i]
 
         L.u_est = Var(bounds=(-2,2))
         L.ddv = Var(bounds=(0,1))
+        #print(len(input_values), len(output_values))
+        #print(type(input_values), type(output_values))
         L.con = Piecewise(L.ddv, L.u_est, pw_pts=input_values, pw_constr_type='EQ', f_rule=output_values, pw_repn='INC')
 
         L.o = Objective(expr=J3(L.u_est, L.ddv, theta1, theta2),
                         sense=minimize)
         
+        #opt_N = pao.Solver("pao.pyomo.FA")
+        #results = opt_N.solve(N)
+        
         SolverFactory('mindtpy').solve(L, mip_solver='glpk', nlp_solver='ipopt') 
 
+        #model.obj.display()
+
+        #print(model.ddv.value)
+        
         u_est = L.u_est.value
         
         cog_A += u_est*sampling_time/sampling_time
@@ -299,6 +303,7 @@ for i1,i2 in zip(i1s, i2s):
         distance = sog_nautical_miles_per_sec * sampling_time
         lat_chg = (distance / 60) * np.cos(np.radians(cog_A))
         lon_chg = (distance / 60) * np.sin(np.radians(cog_A)) / np.cos(np.radians(lat_A))
+        #print(lat_chg, lon_chg)
         
         lats.append(lat_A)
         lons.append(lon_A)
@@ -323,16 +328,8 @@ for i1,i2 in zip(i1s, i2s):
         lat_A_c += lat_chg_c
         lon_A_c += lon_chg_c
     
-    output_pickle.append((dict_out, lats, lons, df, theta1, theta2, delta_t_opt))
-    
     plt.plot(lats, lons,label="est"+str(idx))
     idx += 1
-
-output_pickle.append(df_final)
-# Save the dict_out dictionary to a pickle file
-import pickle
-with open('output_pickle.pkl', 'wb') as f:
-    pickle.dump(output_pickle, f)
 
 plt.plot(df_final["lat"], df_final["lon"],label="gt")
 #plt.plot(df["lat_ts"], df["lon_ts"])
