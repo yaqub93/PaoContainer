@@ -1,42 +1,5 @@
-xdata = [1., 3., 6., 10.]
-ydata  = [6.,2.,8.,7.]
-"""
-
-from pyomo.core import *
-
-from pyomo.environ import *
-
-model = ConcreteModel()
-
-model.u_est = Var(bounds=(1,10))
-model.ddv = Var()
-
-print(len(xdata), len(ydata))
-print(type(xdata), type(ydata))
-
-model.con = Piecewise(model.ddv,model.u_est,
-                      pw_pts=xdata,
-                      pw_constr_type='EQ',
-                      f_rule=ydata,
-                      pw_repn='SOS2')
-
-# see what we get for Y when X=5
-def con2_rule(model):
-    return model.u_est==5
-
-model.con2 = Constraint(rule=con2_rule)
-
-def objf(inp):
-    return inp**2
-
-model.obj = Objective(expr=objf(model.ddv), sense=maximize)
-
-SolverFactory('mindtpy').solve(model, mip_solver='glpk', nlp_solver='ipopt') 
-
-model.obj.display()
-
-print(model.ddv.value)
-"""
+import multiprocessing
+from tqdm import tqdm
 import numpy as np
 
 #import pyomo.environ as pe
@@ -162,23 +125,22 @@ def get_next_state():
     pass
 
 def J3(u, ddv, theta1, theta2):
-    return theta1*u*u + theta2*ddv
+    return theta1*u*u + theta2*ddv*ddv
             
 df = pd.read_csv("filtered_samso_complete2.csv") # from data
 df = df[(df["mmsi"] == 356234000) & (df["scenario"] == "466fbc3092")].reset_index()
-df_final = df.iloc[:75].reset_index()
+
+max_data = 5
+df_final = df.iloc[:max_data].reset_index()
 
 i1s = []
 i2s = []
 i=0
-delta_i = 75
-while i < 75:
+delta_i = max_data
+while i < max_data:
     i1s.append(i)
     i += delta_i
     i2s.append(i)
-print(i1s)
-print(i2s)
-
 
 def upper_obj(theta1, theta2, delta_t, len_u, df):
     ddv_fun = {}
@@ -195,7 +157,11 @@ def upper_obj(theta1, theta2, delta_t, len_u, df):
 
         L.u_est = Var(bounds=(-2,2))
         L.ddv = Var(bounds=(0,1))
-        L.con = Piecewise(L.ddv, L.u_est, pw_pts=input_values, pw_constr_type='EQ', f_rule=output_values, pw_repn='INC')
+        L.con = Piecewise(L.ddv, L.u_est, 
+                          pw_pts=input_values, pw_constr_type='EQ', 
+                          f_rule=output_values, pw_repn='INC', 
+                          warn_domain_coverage= False,
+                          warning_tol=0.0)
 
         L.o = Objective(expr=J3(L.u_est, L.ddv, theta1, theta2),
                         sense=minimize)
@@ -203,11 +169,11 @@ def upper_obj(theta1, theta2, delta_t, len_u, df):
         SolverFactory('mindtpy').solve(L, mip_solver='glpk', nlp_solver='ipopt') 
 
         u_est = L.u_est.value
-        print("(", u_est, df["cog_dot"].iloc[i], ")", end=", ")
+        #print("(", u_est, df["cog_dot"].iloc[i], ")", end=", ")
         #print(theta1.value, theta2.value, u_est)
         M_o_expr += (df["cog_dot"].iloc[i]-u_est)**2
-    print()
-    print("F:",M_o_expr)
+    #print()
+    #print("F:",M_o_expr)
     return M_o_expr
     
 theta1s = []
@@ -215,6 +181,7 @@ theta2s = []
 delta_t_opts = []
 idx = 0
 output_pickle = []
+num_cpus = 16
 for i1,i2 in zip(i1s, i2s):
     df = df_final.iloc[i1:i2]
 
@@ -222,19 +189,28 @@ for i1,i2 in zip(i1s, i2s):
 
     len_u = len(df)
 
-    theta1 = np.arange(0.05,0.46,0.05)
+    theta1 = np.arange(-0.5,1.51,0.05)
     theta2 = 1.0-theta1
-    delta_ts = [30,60,120,180]
+    delta_ts = [30,60,90,120,150,180]
 
-    def calculate_upper_level(t1, t2, ts):
-        print("============")
-        print(t1, t2, ts)
+    def calculate_upper_level(task):
+        #print("============")
+        #print(t1, t2, ts)
+        t1, t2, ts = task
         return (t1, t2, ts), upper_obj(t1, t2, ts, len_u, df)
 
     dict_out = {}
-    with ThreadPoolExecutor() as executor:
+    with multiprocessing.Pool(processes=num_cpus) as pool:
         tasks = [(t1, t2, ts) for t1, t2 in zip(theta1, theta2) for ts in delta_ts]
-        results = executor.map(lambda args: calculate_upper_level(*args), tasks)
+        
+        # Use tqdm to create a progress bar
+        with tqdm(total=len(tasks)) as pbar:
+            # Use pool.imap_unordered to get results asynchronously
+            results = []
+            for result in pool.imap_unordered(calculate_upper_level, tasks):
+                results.append(result)
+                # Update the progress bar for each completed task
+                pbar.update(1)
     print("results")
     print(results)
     for key, value in results:
@@ -280,8 +256,13 @@ for i1,i2 in zip(i1s, i2s):
 
         L.u_est = Var(bounds=(-2,2))
         L.ddv = Var(bounds=(0,1))
-        L.con = Piecewise(L.ddv, L.u_est, pw_pts=input_values, pw_constr_type='EQ', f_rule=output_values, pw_repn='INC')
-
+        
+        L.con = Piecewise(L.ddv, L.u_est, 
+                          pw_pts=input_values, pw_constr_type='EQ', 
+                          f_rule=output_values, pw_repn='INC', 
+                          warn_domain_coverage= False,
+                          warning_tol=0.0)
+        
         L.o = Objective(expr=J3(L.u_est, L.ddv, theta1, theta2),
                         sense=minimize)
         

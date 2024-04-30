@@ -12,12 +12,13 @@ RUN conda install -c conda-forge ipopt glpk
 RUN conda install -c conda-forge pandas
 RUN conda install -c conda-forge shapely
 RUN conda install -c conda-forge matplotlib
+RUN conda install -c conda-forge tqdm
 # The code to run when container is started:
 COPY workdir .
 #RUN ls
 #RUN ls /app/ai-navigator-python-library 
 WORKDIR /app/ai-navigator-python-library 
-RUN git pull
+#RUN git pull
 #RUN pip install -r requirements.txt
 RUN pip install .
 WORKDIR /app

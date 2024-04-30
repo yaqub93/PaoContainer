@@ -1,0 +1,4 @@
+[submodule "ai-navigator-python-library"]
+    path = workdir/ai-navigator-python-library
+    url = https://gitlab.gbar.dtu.dk/dtu-asl/research-projects/ai-navigator/code/ai-navigator-python-library.git
+    branch = feat/good-seamanship-v2
